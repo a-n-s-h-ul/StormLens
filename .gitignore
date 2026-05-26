@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+
+# Streamlit
+.streamlit/
+!.streamlit/config.toml
+!.streamlit/secrets.toml.example
+streamlit*.log
+
+# Data artifacts
+data/raw/*
+data/processed/*
+data/validated/*
+data/reports/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/validated/.gitkeep
+!data/reports/.gitkeep
+
+# Secrets
+.cdsapirc
