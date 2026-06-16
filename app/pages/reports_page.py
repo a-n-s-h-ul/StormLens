@@ -29,6 +29,7 @@ def render() -> None:
         ts_col = st.text_input("Timestamp column (EDA)", value="time").strip() or None
         target = st.text_input("Target column (Feature Intelligence)", value="CAPE").strip() or None
 
+    b_key = f"bundle_{ds.name}"
     if st.button("Generate report bundle", type="primary", use_container_width=True):
         with st.spinner("Building reports …"):
             validation_result = validate_dataset(ds.df) if include_validation else None
@@ -42,17 +43,27 @@ def render() -> None:
                 eda_result=eda_result,
                 feature_result=feature_result,
             )
+            st.session_state[b_key] = bundle
+            st.rerun()
 
+    if b_key in st.session_state:
+        bundle = st.session_state[b_key]
         st.success("Report bundle created.")
         st.write("Artifacts:")
         st.json({k: str(v) for k, v in bundle.items()}, expanded=False)
 
         st.divider()
         for label, path in bundle.items():
-            with open(path, "rb") as f:
-                st.download_button(
-                    f"Download {label}",
-                    data=f,
-                    file_name=path.name,
-                    use_container_width=True,
-                )
+            import pathlib
+            path_obj = pathlib.Path(path)
+            if path_obj.exists():
+                with open(path_obj, "rb") as f:
+                    st.download_button(
+                        f"Download {label}",
+                        data=f,
+                        file_name=path_obj.name,
+                        use_container_width=True,
+                        key=f"dl_{label}_{ds.name}"
+                    )
+            else:
+                st.error(f"File not found: {path_obj}")

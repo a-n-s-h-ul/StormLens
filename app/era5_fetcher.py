@@ -21,12 +21,15 @@ SUPPORTED_SINGLE_LEVEL_VARS = {
     "CAPE": "convective_available_potential_energy",
     "CIN": "convective_inhibition",
     "temperature": "2m_temperature",
+    # NOTE: CDS does NOT support requesting "2m_relative_humidity" directly.
+    # Relative humidity is derived from 2m temperature + 2m dewpoint temperature.
     "humidity": "2m_relative_humidity",
     "u wind": "10m_u_component_of_wind",
     "v wind": "10m_v_component_of_wind",
     "pressure": "surface_pressure",
     "precipitation": "total_precipitation",
 }
+
 
 SUPPORTED_PRESSURE_LEVEL_VARS = {
     "temperature": "temperature",
@@ -116,13 +119,36 @@ def fetch_era5(
     area = _era5_area_bbox(req.latitude, req.longitude, req.area_pad_deg)
     times = _times_hourly()
 
-    requested_single = []
-    requested_pressure = []
+    # Translate UI-level variable selections into CDS-native variables.
+    # NOTE: "humidity" is derived (not natively available as 2m relative humidity).
+    requested_single: list[str] = []
+    requested_pressure: list[str] = []
+
+    need_2m_rh = any(v == "humidity" for v in req.variables)
+
     for v in req.variables:
+        if v == "humidity":
+            # Fetch native prerequisites instead of requesting RH directly.
+            requested_single.extend(["2m_temperature", "2m_dewpoint_temperature"])
+            continue
         if v in SUPPORTED_SINGLE_LEVEL_VARS:
             requested_single.append(SUPPORTED_SINGLE_LEVEL_VARS[v])
         if v in SUPPORTED_PRESSURE_LEVEL_VARS:
             requested_pressure.append(SUPPORTED_PRESSURE_LEVEL_VARS[v])
+
+    # De-duplicate while preserving order
+    def _dedupe(seq: list[str]) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for x in seq:
+            if x not in seen:
+                seen.add(x)
+                out.append(x)
+        return out
+
+    requested_single = _dedupe(requested_single)
+    requested_pressure = _dedupe(requested_pressure)
+
 
     if not requested_single and not requested_pressure:
         raise ValueError("No supported variables selected.")
@@ -182,7 +208,7 @@ def fetch_era5(
                 "variable": requested_single,
                 "time": times,
                 "area": area,
-                "format": "netcdf",
+                "data_format": "netcdf",
             },
             kind="single",
         )
@@ -197,7 +223,7 @@ def fetch_era5(
                 "pressure_level": [str(p) for p in req.pressure_levels],
                 "time": times,
                 "area": area,
-                "format": "netcdf",
+                "data_format": "netcdf",
             },
             kind="pressure",
         )
@@ -205,13 +231,50 @@ def fetch_era5(
 
     _tick(0.80, "Converting NetCDF → DataFrame/CSV …")
 
+    def _compute_2m_relative_humidity(df_in: pd.DataFrame) -> pd.DataFrame:
+        """Derive 2m relative humidity from 2m temperature and 2m dewpoint temperature.
+
+        Expects columns:
+          - "2m_temperature"
+          - "2m_dewpoint_temperature"
+
+        Adds column "2m_relative_humidity".
+        """
+        if "2m_relative_humidity" in df_in.columns:
+            return df_in
+        if "2m_temperature" not in df_in.columns or "2m_dewpoint_temperature" not in df_in.columns:
+            return df_in
+
+        T = df_in["2m_temperature"].astype(float)
+        Td = df_in["2m_dewpoint_temperature"].astype(float)
+
+        # Magnus formula (in Kelvin -> convert to Celsius internally)
+        T_c = T - 273.15
+        Td_c = Td - 273.15
+        a = 17.625
+        b = 243.04
+
+        # RH = 100 * exp( a*Td/(b+Td) ) / exp( a*T/(b+T) )
+        rh = 100.0 * np.exp((a * Td_c) / (b + Td_c)) / np.exp((a * T_c) / (b + T_c))
+        df_out = df_in.copy()
+        df_out["2m_relative_humidity"] = rh
+        df_out = df_out.replace([np.inf, -np.inf], np.nan)
+        return df_out
+
     csv_paths = []
+    need_derivation = any(v == "humidity" for v in req.variables)
+
     for nc in outputs:
         df = netcdf_to_dataframe(nc, aggregate_area=True)
+
+        if need_derivation:
+            df = _compute_2m_relative_humidity(df)
+
         csv_path = nc.with_suffix(".csv")
         df.to_csv(csv_path, index=False)
         csv_paths.append(csv_path)
         manifest["artifacts"].append({"type": "csv", "path": str(csv_path)})
+
 
     manifest_path = out_dir / f"era5_manifest_{stamp}.json"
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")

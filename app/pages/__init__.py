@@ -1,5 +1,6 @@
 from . import (
     home,
+    about_the_project,
     era5_data_fetch,
     upload_csv,
     validation_page,
@@ -7,6 +8,7 @@ from . import (
     dimensionality_page,
     feature_intelligence_page,
     model_readiness_page,
+    model_selector_preview,
     pipeline_status_page,
     catalog_page,
     reports_page,
@@ -14,6 +16,7 @@ from . import (
 
 __all__ = [
     "home",
+    "about_the_project",
     "era5_data_fetch",
     "upload_csv",
     "validation_page",
@@ -21,6 +24,7 @@ __all__ = [
     "dimensionality_page",
     "feature_intelligence_page",
     "model_readiness_page",
+    "model_selector_preview",
     "pipeline_status_page",
     "catalog_page",
     "reports_page",

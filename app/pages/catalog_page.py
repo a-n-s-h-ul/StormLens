@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from app.state import set_dataset
+from app.state import get_dataset, set_dataset
 from app.ui import hero, kpi_strip
 from utils.catalog import catalog_summary, scan_data_catalog
 from utils.io import load_csv_cached
@@ -53,10 +53,17 @@ def render() -> None:
         if st.button("Load selected CSV", type="primary", use_container_width=True):
             path = Path(selected)
             df = load_csv_cached(path)
-            st.success(f"Loaded `{path.name}` into the active workspace.")
-            from app.ui import next_step_button
-            next_step_button(
-                "Validation",
-                "Continue to validation",
-                "next_validation_after_catalog",
-            )
+            set_dataset(df, name=path.name, path=path)
+            st.success(f"Successfully loaded `{path.name}` into the active workspace.")
+            st.rerun()
+
+    ds = get_dataset()
+    if ds is not None:
+        st.divider()
+        st.info(f"Active dataset: **{ds.name}** ({len(ds.df):,} rows, {ds.df.shape[1]:,} columns)")
+        from app.ui import next_step_button
+        next_step_button(
+            "Validation",
+            "Continue to validation",
+            "next_validation_after_catalog",
+        )

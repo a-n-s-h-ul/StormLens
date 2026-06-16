@@ -75,5 +75,5 @@ def render() -> None:
         )
         
         if st.button("Return to Home", use_container_width=True):
-            st.session_state["stormlens_page"] = "Home"
+            st.session_state["stormlens_page"] = "Home Dashboard"
             st.rerun()

@@ -186,20 +186,13 @@ def render() -> None:
                     result = fetch_era5(req, out_dir=out_dir, progress_cb=_progress_adapter(bar))
 
                 csv_paths = result["csv_paths"]
-                st.success("ERA5 ingestion completed.")
-                with st.expander("Artifacts manifest", expanded=False):
-                    st.json(result["manifest"], expanded=False)
-
                 if csv_paths:
                     primary_csv: Path = csv_paths[0]
                     df = load_csv_cached(primary_csv)
                     set_dataset(df, name=primary_csv.name, path=primary_csv)
-                    st.success(f"Loaded into workspace: `{primary_csv.name}`")
-                    next_step_button(
-                        "Dataset Catalog",
-                        "Continue to dataset catalog",
-                        "next_catalog_after_era5_fetch",
-                    )
+                    st.session_state["era5_fetch_msg"] = f"Successfully fetched and loaded: `{primary_csv.name}`"
+                    st.session_state["era5_manifest"] = result["manifest"]
+                    st.rerun()
             except Exception as exc:  # noqa: BLE001
                 st.error(f"ERA5 fetch failed: {exc}")
             finally:
@@ -208,23 +201,38 @@ def render() -> None:
     with col_b:
         st.subheader("Load existing raw CSV")
         raw_csvs = list_raw_csv_files()
-        if not raw_csvs:
-            st.caption("No raw CSV files found yet.")
-            return
-
-        pick = st.selectbox(
-            "Available data/raw/*.csv",
-            options=raw_csvs,
-            format_func=lambda p: p.name,
-        )
-        if st.button("Load selected dataset", use_container_width=True):
-            df = load_csv_cached(pick)
-            set_dataset(df, name=pick.name, path=pick)
-            st.success(f"Loaded: `{pick.name}`")
-            next_step_button(
-                "Dataset Catalog",
-                "Continue to dataset catalog",
-                "next_catalog_after_raw_load",
+        if raw_csvs:
+            pick = st.selectbox(
+                "Available data/raw/*.csv",
+                options=raw_csvs,
+                format_func=lambda p: p.name,
+                key="era5_raw_csv_select"
             )
-            with st.expander("Preview", expanded=True):
-                st.dataframe(df.head(200), use_container_width=True)
+            if st.button("Load selected dataset", use_container_width=True):
+                df = load_csv_cached(pick)
+                set_dataset(df, name=pick.name, path=pick)
+                st.session_state["era5_fetch_msg"] = f"Loaded dataset: `{pick.name}`"
+                if "era5_manifest" in st.session_state:
+                    del st.session_state["era5_manifest"]
+                st.rerun()
+        else:
+            st.caption("No raw CSV files found yet.")
+
+    ds = get_dataset()
+    if ds is not None:
+        st.divider()
+        msg = st.session_state.get("era5_fetch_msg", f"Active dataset: **{ds.name}**")
+        st.success(msg)
+        
+        manifest = st.session_state.get("era5_manifest")
+        if manifest:
+            with st.expander("Artifacts manifest", expanded=False):
+                st.json(manifest, expanded=False)
+
+        next_step_button(
+            "Dataset Catalog",
+            "Continue to dataset catalog",
+            "next_catalog_after_era5_load_success",
+        )
+        with st.expander("Preview active dataset", expanded=False):
+            st.dataframe(ds.df.head(200), use_container_width=True)
